@@ -1,0 +1,15 @@
+Flask==2.3.3
+Flask-Cors
+Flask-JWT-Extended
+Flask-SQLAlchemy
+Werkzeug
+scikit-learn==1.3.0
+pandas==2.0.3
+numpy==1.24.3
+joblib==1.3.2
+geopy
+polyline
+python-dotenv
+twilio
+requests
+flask-socketio
