@@ -9,11 +9,17 @@ const api = axios.create({
   timeout: 120000,
 });
 
-// Add token to requests if it exists
+// Add token to authenticated API calls — never on login/register (stale/invalid Bearer causes 401 before credentials run).
 api.interceptors.request.use((config) => {
+  const path = config.url || '';
+  const isPublicAuth =
+    path.includes('auth/login') || path.includes('auth/register');
   const token = localStorage.getItem('token');
-  if (token) {
+  if (token && !isPublicAuth) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (isPublicAuth && config.headers.Authorization) {
+    delete config.headers.Authorization;
   }
   return config;
 });
@@ -24,8 +30,9 @@ api.interceptors.response.use(
   (error) => {
     const url = error.config?.url || '';
     const isAuthSubmit =
-      url.includes('/api/auth/login') || url.includes('/api/auth/register');
-    // Wrong password / bad credentials: let the page handle it; don't hard-redirect.
+      url.includes('auth/login') ||
+      url.includes('auth/register') ||
+      error.config?.skip401Redirect === true;
     if (error.response?.status === 401 && !isAuthSubmit) {
       localStorage.removeItem('token');
       window.location.href = '/login';
@@ -37,8 +44,10 @@ api.interceptors.response.use(
 // API endpoints mapping correctly to Python backend
 const endpoints = {
   auth: {
-    login: (email, password) => api.post('/api/auth/login', { email, password }),
-    register: (userData) => api.post('/api/auth/register', userData),
+    login: (email, password) =>
+      api.post('/api/auth/login', { email, password }, { skip401Redirect: true }),
+    register: (userData) =>
+      api.post('/api/auth/register', userData, { skip401Redirect: true }),
   },
   rides: {
     bookRide: (source, destination, routeObj, safetyScore) => api.post('/api/ride/book-ride', {
