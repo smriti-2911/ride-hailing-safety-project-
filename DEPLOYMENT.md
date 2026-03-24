@@ -30,6 +30,14 @@ Set these on the hosting dashboard (do **not** paste them in the repo):
 | `TWILIO_PHONE_NUMBER` | E.164, e.g. `+1XXXXXXXXXX`. |
 | `DATABASE_URL` | Optional; e.g. Postgres URL from Render/Railway. If unset, SQLite under `instance/` (ephemeral on many hosts). |
 
+### Build command (Render)
+
+Use **`backend/requirements-prod.txt`**, not the full `requirements.txt`. The full file pulls Jupyter and many scientific extras; installs are huge and **old pins can force source builds** (e.g. scikit-learn on Python 3.12 — very slow or times out).
+
+```bash
+pip install --upgrade pip setuptools wheel && pip install -r backend/requirements-prod.txt
+```
+
 ### Start command
 
 From repository **root** (this repo includes a `Procfile`):
