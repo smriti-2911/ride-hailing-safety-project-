@@ -5,6 +5,7 @@ from models.user import User
 from database import db
 from services.twilio_service import send_alert_sms
 from services.temporal_tracker import clear_ride_tracking
+from services.sms_templates import ride_started_message, ride_completed_message, plan_a_sms_for_ledger_event
 
 ride_bp = Blueprint('ride', __name__)
 
@@ -41,9 +42,8 @@ def book_ride():
         db.session.add(ride)
         db.session.commit()
 
-        # Notify emergency contacts that tracking started
         phone_numbers = [num for num in [user.phone, user.emergency_contact] if num]
-        sms_msg = f"Ride started from {source} to {destination}. Tracking enabled."
+        sms_msg = ride_started_message(user.name, source, destination)
         for num in phone_numbers:
             send_alert_sms(num, sms_msg)
 
@@ -98,35 +98,26 @@ def check_deviation():
         )
 
         phone_numbers = [num for num in [user.phone, user.emergency_contact] if num]
-        
-        # 1. Twilio SMS Routing
-        if action == 'NEW_SOS':
-            sms_msg = (
-                f"🚨 SOS ALERT: Possible unsafe situation detected for your ride "
-                f"from {ride.source} to {ride.destination}. Live tracking active."
-            )
-            for num in phone_numbers:
-                send_alert_sms(num, sms_msg)
-        elif action == 'RECOVERED':
-            sms_msg = (
-                f"✅ Update: The vehicle has returned to the planned route. Situation normalized."
-            )
-            for num in phone_numbers:
-                send_alert_sms(num, sms_msg)
-        elif state_changed:
-            if status == 'SUSTAINED_DEVIATION':
-                sms_msg = f"⚠️ NavSafe Warning: Vehicle has deviated from planned route and has not returned for 15+ seconds."
-                for num in phone_numbers:
-                    send_alert_sms(num, sms_msg)
-            elif status == 'HIGH_RISK':
-                sms_msg = f"⚠️ NavSafe Alert: Vehicle is off-route in a low-safety area. Monitoring closely."
-                for num in phone_numbers:
-                    send_alert_sms(num, sms_msg)
 
-        # 2. Database Alert Logging: one row per meaningful transition (not every GPS tick).
-        # Keeps cruise rides readable ("on safe route" once, then changes only).
-        # Scripted demo: one row per scenario phase when status/message changes.
+        # Plan A SMS: same moments as meaningful ledger rows (see should_log_ledger below).
         should_log_ledger = state_changed or action in ("NEW_SOS", "RECOVERED")
+        sms_body = None
+        if phone_numbers and should_log_ledger:
+            sms_body = plan_a_sms_for_ledger_event(
+                status,
+                action,
+                state_changed,
+                ride,
+                user,
+                current_lat,
+                current_lng,
+            )
+            if sms_body:
+                for num in phone_numbers:
+                    send_alert_sms(num, sms_body)
+
+        # Database Alert Logging: one row per meaningful transition (not every GPS tick).
+        # Scripted demo: one row per scenario phase when status/message changes.
 
         if should_log_ledger:
             from models.alert import AlertLog
@@ -211,9 +202,8 @@ def complete_ride(ride_id):
         ride.status = 'completed'
         db.session.commit()
 
-        # Send completion SMS
         phone_numbers = [num for num in [user.phone, user.emergency_contact] if num]
-        sms_msg = "Ride completed successfully. No risks detected."
+        sms_msg = ride_completed_message(user.name, ride.destination)
         for num in phone_numbers:
             send_alert_sms(num, sms_msg)
 

@@ -28,9 +28,14 @@ basedir = _basedir
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(basedir, 'instance', 'database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-secret-key')
-app.config['TWILIO_ACCOUNT_SID'] = os.environ.get('TWILIO_ACCOUNT_SID')
-app.config['TWILIO_AUTH_TOKEN'] = os.environ.get('TWILIO_AUTH_TOKEN')
-app.config['TWILIO_PHONE_NUMBER'] = os.environ.get('TWILIO_PHONE_NUMBER')
+# Strip whitespace/newlines — unquoted .env values often break Twilio auth if a newline slips in
+def _env_strip(key):
+    v = os.environ.get(key)
+    return v.strip() if isinstance(v, str) else v
+
+app.config['TWILIO_ACCOUNT_SID'] = _env_strip('TWILIO_ACCOUNT_SID')
+app.config['TWILIO_AUTH_TOKEN'] = _env_strip('TWILIO_AUTH_TOKEN')
+app.config['TWILIO_PHONE_NUMBER'] = _env_strip('TWILIO_PHONE_NUMBER')
 app.config['GOOGLE_MAPS_API_KEY'] = os.environ.get('GOOGLE_MAPS_API_KEY')
 
 # Initialize Extensions
