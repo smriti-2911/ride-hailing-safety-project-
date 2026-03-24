@@ -28,9 +28,14 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
+      const msg =
+        error.response?.data?.error ||
+        (error.code === 'ECONNABORTED'
+          ? 'Server took too long (try again in a moment — API may be waking up)'
+          : error.message);
       return {
         success: false,
-        error: error.response?.data?.error || 'Login failed'
+        error: msg || 'Login failed'
       };
     }
   };
@@ -41,9 +46,14 @@ export const AuthProvider = ({ children }) => {
       // Auto login after registration
       return await login(userData.email, userData.password);
     } catch (error) {
+      const msg =
+        error.response?.data?.error ||
+        (error.code === 'ECONNABORTED'
+          ? 'Server took too long (try again — API may be waking up)'
+          : error.message);
       return {
         success: false,
-        error: error.response?.data?.error || 'Registration failed'
+        error: msg || 'Registration failed'
       };
     }
   };

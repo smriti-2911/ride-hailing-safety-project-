@@ -3,9 +3,10 @@ import axios from 'axios';
 const configuredBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
 const BASE_URL = configuredBase.replace(/\/+$/, '');
 
+// Render free tier can cold-start 30–60s+; 10s caused false "Login failed" after successful register.
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10000,
+  timeout: 120000,
 });
 
 // Add token to requests if it exists
@@ -21,7 +22,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const url = error.config?.url || '';
+    const isAuthSubmit =
+      url.includes('/api/auth/login') || url.includes('/api/auth/register');
+    // Wrong password / bad credentials: let the page handle it; don't hard-redirect.
+    if (error.response?.status === 401 && !isAuthSubmit) {
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
