@@ -62,10 +62,12 @@ def login():
     if not user or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid email or password'}), 401
     
-    # Create access token with user ID as identity
-    access_token = create_access_token(identity=str(user.id))
-    
-    return jsonify({
-        'access_token': access_token,
-        'user': user.to_dict()
-    }), 200
+    try:
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({
+            'access_token': access_token,
+            'user': user.to_dict()
+        }), 200
+    except Exception:
+        current_app.logger.exception('login token or response failed')
+        return jsonify({'error': 'Could not complete sign in. Try again.'}), 500

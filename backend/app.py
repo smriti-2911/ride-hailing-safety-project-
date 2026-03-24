@@ -36,7 +36,14 @@ else:
     _db_url = 'sqlite:///' + os.path.join(_instance, 'database.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-secret-key')
+# If JWT_SECRET_KEY is set but empty on the host, os.environ.get still returns "" and JWT signing crashes (login 500).
+_jwt = os.environ.get('JWT_SECRET_KEY', 'default-secret-key')
+if isinstance(_jwt, str):
+    _jwt = _jwt.strip()
+if not _jwt:
+    _jwt = 'default-secret-key'
+app.config['JWT_SECRET_KEY'] = _jwt
+app.config['SECRET_KEY'] = _jwt
 # Strip whitespace/newlines — unquoted .env values often break Twilio auth if a newline slips in
 def _env_strip(key):
     v = os.environ.get(key)
