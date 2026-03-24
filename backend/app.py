@@ -1,12 +1,14 @@
 # pyre-ignore-all-errors
 import os
+from dotenv import load_dotenv
+
+# Load backend/.env before any route imports (services/google_maps reads GOOGLE_MAPS_API_KEY).
+_basedir = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(os.path.join(_basedir, ".env"))
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Import Database and Initialize
 from database import init_db
@@ -22,10 +24,14 @@ app = Flask(__name__)
 CORS(app)
 
 # Configure Database & JWT
-basedir = os.path.abspath(os.path.dirname(__file__))
+basedir = _basedir
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(basedir, 'instance', 'database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-secret-key')
+app.config['TWILIO_ACCOUNT_SID'] = os.environ.get('TWILIO_ACCOUNT_SID')
+app.config['TWILIO_AUTH_TOKEN'] = os.environ.get('TWILIO_AUTH_TOKEN')
+app.config['TWILIO_PHONE_NUMBER'] = os.environ.get('TWILIO_PHONE_NUMBER')
+app.config['GOOGLE_MAPS_API_KEY'] = os.environ.get('GOOGLE_MAPS_API_KEY')
 
 # Initialize Extensions
 init_db(app)

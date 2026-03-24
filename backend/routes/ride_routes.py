@@ -4,8 +4,7 @@ from models.ride import Ride
 from models.user import User
 from database import db
 from services.twilio_service import send_alert_sms
-from geopy.distance import geodesic
-import polyline
+from services.temporal_tracker import clear_ride_tracking
 
 ride_bp = Blueprint('ride', __name__)
 
@@ -69,6 +68,7 @@ def check_deviation():
     
     ride_id = data.get('ride_id')
     current_location = data.get('current_location')
+    context = data.get('context') or {}
     
     if not all([ride_id, current_location]):
         return jsonify({'error': 'Missing required fields'}), 400
@@ -93,7 +93,9 @@ def check_deviation():
         loc_dict = {'lat': current_lat, 'lng': current_lng}
         
         from services.temporal_tracker import analyze_live_location
-        status, msg, live_score, action, state_changed = analyze_live_location(ride.id, loc_dict, polyline_str, base_score)
+        status, msg, live_score, action, state_changed = analyze_live_location(
+            ride.id, loc_dict, polyline_str, base_score, context
+        )
 
         phone_numbers = [num for num in [user.phone, user.emergency_contact] if num]
         
@@ -121,19 +123,30 @@ def check_deviation():
                 for num in phone_numbers:
                     send_alert_sms(num, sms_msg)
 
-        # 2. Database Alert Logging
-        if state_changed or action == 'NEW_SOS':
+        # 2. Database Alert Logging: one row per meaningful transition (not every GPS tick).
+        # Keeps cruise rides readable ("on safe route" once, then changes only).
+        # Scripted demo: one row per scenario phase when status/message changes.
+        should_log_ledger = state_changed or action in ("NEW_SOS", "RECOVERED")
+
+        if should_log_ledger:
             from models.alert import AlertLog
             from models.sos import SOSEvent
-            
+
             severity = 'Info'
-            if status in ['MINOR_DEVIATION', 'RETURNED_TO_ROUTE']:
+            if status in ['MINOR_DEVIATION', 'RETURNED_TO_ROUTE', 'RECOVERED_CRUISE', 'SLIGHT_DEVIATION']:
                 severity = 'Warning'
-            elif status in ['SUSTAINED_DEVIATION', 'HIGH_RISK']:
+            elif status in ['VISIBILITY_MODERATE', 'VISIBILITY_HIGH', 'TRAFFIC_DELAY', 'IDLE']:
+                severity = 'Warning'
+            elif status in [
+                'SUSTAINED_DEVIATION', 'SUSTAINED_DEVIATION_HIGH_RISK', 'HIGH_RISK',
+                'NIGHT_RISK', 'LOW_ACTIVITY_ZONE', 'LONG_IDLE', 'SUSPICIOUS_STOP',
+            ]:
                 severity = 'Critical'
-            elif status == 'SOS_TRIGGERED':
+            elif status in ('SOS_TRIGGERED', 'SOS_TRIGGER'):
                 severity = 'SOS'
-                
+            elif 'DEVIATION' in str(status):
+                severity = 'Warning'
+
             new_log = AlertLog(
                 ride_id=ride.id,
                 event_type=status,
@@ -141,7 +154,7 @@ def check_deviation():
                 message=msg
             )
             db.session.add(new_log)
-            
+
             if action == 'NEW_SOS':
                 new_sos = SOSEvent(ride_id=ride.id, status='active')
                 db.session.add(new_sos)
@@ -151,7 +164,7 @@ def check_deviation():
                     active_sos.status = 'resolved'
                     from datetime import datetime
                     active_sos.resolved_at = datetime.utcnow()
-                    
+
             db.session.commit()
 
         is_sos = (action in ['NEW_SOS', 'ONGOING_SOS'])
@@ -204,6 +217,8 @@ def complete_ride(ride_id):
         for num in phone_numbers:
             send_alert_sms(num, sms_msg)
 
+        clear_ride_tracking(ride_id)
+
         return jsonify({
             'message': 'Ride completed successfully',
             'ride_id': ride.id,
@@ -213,6 +228,81 @@ def complete_ride(ride_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+
+# -----------------------------
+# ✅ Clear all ride history (rides + ledger + SOS rows for user)
+# -----------------------------
+@ride_bp.route('/clear-history', methods=['DELETE'])
+@jwt_required()
+def clear_history():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    from models.alert import AlertLog
+    from models.sos import SOSEvent
+
+    rides = Ride.query.filter_by(user_id=user_id).all()
+    n = 0
+    for ride in rides:
+        AlertLog.query.filter_by(ride_id=ride.id).delete()
+        SOSEvent.query.filter_by(ride_id=ride.id).delete()
+        db.session.delete(ride)
+        n += 1
+    db.session.commit()
+    return jsonify({'message': 'History cleared', 'deleted_rides': n}), 200
+
+
+# -----------------------------
+# ✅ Delete one ride (ledger + SOS for that ride)
+# -----------------------------
+@ride_bp.route('/<int:ride_id>', methods=['DELETE'])
+@jwt_required()
+def delete_one_ride(ride_id):
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    ride = Ride.query.get(ride_id)
+    if not ride or ride.user_id != user.id:
+        return jsonify({'error': 'Not found'}), 404
+
+    from models.alert import AlertLog
+    from models.sos import SOSEvent
+
+    AlertLog.query.filter_by(ride_id=ride_id).delete()
+    SOSEvent.query.filter_by(ride_id=ride_id).delete()
+    db.session.delete(ride)
+    db.session.commit()
+    return jsonify({'message': 'Ride deleted', 'ride_id': ride_id}), 200
+
+
+# -----------------------------
+# ✅ List current user's rides (history)
+# -----------------------------
+@ride_bp.route('/my-rides', methods=['GET'])
+@jwt_required()
+def list_my_rides():
+    user_id = get_jwt_identity()
+    from models.alert import AlertLog
+
+    rides = Ride.query.filter_by(user_id=int(user_id)).order_by(Ride.id.desc()).limit(50).all()
+    out = []
+    for r in rides:
+        activity_count = AlertLog.query.filter_by(ride_id=r.id).count()
+        out.append({
+            'id': r.id,
+            'source': r.source,
+            'destination': r.destination,
+            'status': r.status,
+            'safety_score': r.safety_score,
+            'activity_count': activity_count,
+        })
+    return jsonify({'rides': out}), 200
+
 
 # -----------------------------
 # ✅ Fetch Ride Timeline
@@ -228,8 +318,8 @@ def get_ride_alerts(ride_id):
         return jsonify({'error': 'Unauthorized or Not Found'}), 403
         
     from models.alert import AlertLog
-    alerts = AlertLog.query.filter_by(ride_id=ride_id).order_by(AlertLog.timestamp.desc()).all()
-    
+    alerts = AlertLog.query.filter_by(ride_id=ride_id).order_by(AlertLog.timestamp.asc()).all()
+
     return jsonify({
         'alerts': [a.to_dict() for a in alerts]
     }), 200

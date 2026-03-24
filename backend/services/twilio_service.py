@@ -21,10 +21,13 @@ def send_alert_sms(phone_number, message):
     """Send SMS alert using Twilio."""
     try:
         formatted_number = format_to_e164(phone_number)
-        account_sid = current_app.config['TWILIO_ACCOUNT_SID']
-        auth_token = current_app.config['TWILIO_AUTH_TOKEN']
-        from_number = current_app.config['TWILIO_PHONE_NUMBER']
-        
+        account_sid = current_app.config.get('TWILIO_ACCOUNT_SID')
+        auth_token = current_app.config.get('TWILIO_AUTH_TOKEN')
+        from_number = current_app.config.get('TWILIO_PHONE_NUMBER')
+        if not all([account_sid, auth_token, from_number, message]):
+            print("TWILIO: missing credentials or message; SMS skipped.")
+            return False, "twilio_not_configured"
+
         client = Client(account_sid, auth_token)
         
         message = client.messages.create(

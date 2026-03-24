@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.safety import SafetyData
@@ -30,9 +31,14 @@ def get_safety_scores(source, destination, user_profile=None, safety_mode="norma
     """Get deterministic, explainable safety scores for route alternatives."""
     print(f"Looking up safety data for source: {source} and destination: {destination}")
 
+    if not (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip():
+        return {
+            "error": "Google Maps API key is not configured. Set GOOGLE_MAPS_API_KEY in backend/.env and restart the API.",
+        }, 400
+
     source_coords = get_coordinates(source)
     dest_coords = get_coordinates(destination)
-    
+
     if not source_coords or not dest_coords:
         return {"error": "Could not get coordinates for locations"}, 400
 

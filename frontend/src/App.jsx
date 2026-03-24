@@ -9,6 +9,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import PostRide from './pages/PostRide';
+import Profile from './pages/Profile';
+import RideHistory from './pages/RideHistory';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -38,6 +40,22 @@ const App = () => {
               element={
                 <ProtectedRoute>
                   <PostRide />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rides"
+              element={
+                <ProtectedRoute>
+                  <RideHistory />
                 </ProtectedRoute>
               }
             />

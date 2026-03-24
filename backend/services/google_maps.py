@@ -12,32 +12,44 @@ from typing import List, Dict, Optional, Tuple
 from services.route_service import find_nearest_location
 from dotenv import load_dotenv
 
-load_dotenv()
+# Ensure backend/.env is loaded even if cwd is not backend/ (when google_maps imports before app.py).
+_here = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv(os.path.join(_here, ".env"))
+
 geolocator = Nominatim(user_agent="ride_safety_app")
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 BASE_URL = "https://maps.googleapis.com/maps/api"
+
+
+def _google_maps_api_key():
+    """Read at call time so the key is always current after env load."""
+    return (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 
 
 def get_coordinates(address):
     """Get coordinates from address using Google Maps API."""
     url = "https://maps.googleapis.com/maps/api/geocode/json"
-    
+    key = _google_maps_api_key()
+    if not key:
+        print("GOOGLE_MAPS_API_KEY is missing — set it in backend/.env and restart the API.")
+
     def fetch(query):
-        params = {"address": query, "key": GOOGLE_MAPS_API_KEY}
+        params = {"address": query, "key": key}
         res = requests.get(url, params=params).json()
         if res.get("status") == "OK" and res.get("results"):
             location = res["results"][0]["geometry"]["location"]
             return location["lat"], location["lng"]
+        if res.get("status") and res.get("status") != "OK":
+            print(f"Geocode status={res.get('status')} error_message={res.get('error_message')}")
         return None
 
     # Enforce Pune boundary to prevent overlapping neighborhood lookups (e.g. Bangalore Shivajinagar)
     search_query = address
     if "pune" not in address.lower():
         search_query = f"{address}, Pune, Maharashtra, India"
-        
+
     coords = fetch(search_query)
     if not coords:
-        coords = fetch(address) # Fallback
+        coords = fetch(address)  # Fallback
     return coords
 
 
@@ -59,7 +71,7 @@ def get_routes_by_address(start_address, end_address):
         "alternatives": "true",
         "mode": "driving",
         "departure_time": "now",
-        "key": GOOGLE_MAPS_API_KEY
+        "key": _google_maps_api_key()
     }
     res = requests.get(url, params=params).json()
     if res["status"] != "OK":
@@ -82,6 +94,10 @@ def get_routes_by_address(start_address, end_address):
 def get_routes(start, end) -> List[Dict]:
     """Get multiple possible routes between two points using Google Maps Directions API."""
     try:
+        key = _google_maps_api_key()
+        if not key:
+            print("GOOGLE_MAPS_API_KEY is missing — cannot fetch directions.")
+            return []
         if isinstance(start, tuple):
             start = {'lat': start[0], 'lng': start[1]}
         if isinstance(end, tuple):
@@ -95,7 +111,7 @@ def get_routes(start, end) -> List[Dict]:
                 "alternatives": "true",
                 "mode": "driving",
                 "departure_time": "now",
-                "key": GOOGLE_MAPS_API_KEY
+                "key": key
             }
         )
         data = response.json()
@@ -137,7 +153,7 @@ def get_routes(start, end) -> List[Dict]:
                         "alternatives": "false",
                         "mode": "driving",
                         "departure_time": "now",
-                        "key": GOOGLE_MAPS_API_KEY
+                        "key": key
                     }
                 )
                 new_data = new_response.json()

@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Navigation2, Search, MapPin, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Navigation2, Search, MapPin, ShieldCheck, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import LiveRiskDashboard from './LiveRiskDashboard';
 
 const RideControls = ({
     onSearchRoutes,
     onBookRide,
-    onSimulateDeviation,
     onCompleteRide,
     routes,
     safestRouteIndex,
@@ -15,9 +14,8 @@ const RideControls = ({
     activeRide,
     loading,
     liveRisk,
-    activeScenario,
-    isAutoLooping,
-    setIsAutoLooping
+    simulateLiveEvents,
+    setSimulateLiveEvents,
 }) => {
     const [source, setSource] = useState('');
     const [destination, setDestination] = useState('');
@@ -36,41 +34,19 @@ const RideControls = ({
         return (
             <motion.div
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                className="space-y-6"
+                className="space-y-6 flex flex-col min-h-0"
             >
-                <div className="bg-emerald-500/10 border-emerald-500/30 border rounded-2xl p-5 relative overflow-hidden backdrop-blur-md">
-                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-emerald-500/20 blur-2xl rounded-full"></div>
-                    <div className="flex items-center gap-3 relative z-10">
-                        <div className="p-2 bg-emerald-500/20 rounded-xl">
-                            <ShieldCheck className="w-6 h-6 text-emerald-400" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="text-lg font-bold text-emerald-400 tracking-wide">Secure Ride Active</h3>
-                            <p className="text-xs text-emerald-200/70 font-medium">
-                                {activeScenario ? `Simulating: ${activeScenario}` : 'AI monitoring route deviation'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* The Live Intelligance Dashboard replaces the static SOS buttons */}
                 <LiveRiskDashboard 
-                    rideId={activeRide.id || 'demo_123'} 
+                    rideId={activeRide.id} 
                     liveRisk={liveRisk}
                 />
 
-                <div className="space-y-4 pt-4">
-                    <label className="flex items-center justify-between bg-slate-800/50 border border-white/5 py-3 px-4 rounded-xl cursor-pointer">
-                        <div>
-                            <span className="text-sm font-bold text-white block">Auto-Loop Demos</span>
-                            <span className="text-[10px] text-slate-400 font-medium">Continuously trigger random scenarios</span>
-                        </div>
-                        <div className={`w-11 h-6 rounded-full transition-colors relative ${isAutoLooping ? 'bg-indigo-500' : 'bg-slate-700'}`}>
-                            <input type="checkbox" className="sr-only" checked={isAutoLooping} onChange={() => setIsAutoLooping(!isAutoLooping)} />
-                            <div className={`absolute top-1 max-w-full bottom-1 w-4 bg-white rounded-full transition-transform ${isAutoLooping ? 'translate-x-6' : 'translate-x-1'}`}></div>
-                        </div>
-                    </label>
-
+                <div className="space-y-4 pt-2 shrink-0">
+                    {activeRide?.simulateLiveEvents === false && (
+                        <p className="text-[10px] text-slate-500 font-medium px-1">
+                            Normal trip mode — minimal ledger; map stays on the green corridor.
+                        </p>
+                    )}
                     <button
                         onClick={onCompleteRide}
                         className="w-full py-4 px-4 bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] font-bold tracking-wide rounded-2xl transition-all duration-300"
@@ -117,7 +93,30 @@ const RideControls = ({
                     />
                 </div>
 
-
+                <label className="flex items-start gap-3 p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/5 border border-indigo-500/20 cursor-pointer hover:border-indigo-400/40 transition-colors">
+                    <div className="mt-0.5 p-2 rounded-lg bg-indigo-500/20 border border-indigo-500/30 shrink-0">
+                        <Zap className="w-4 h-4 text-amber-300" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <span className="text-sm font-bold text-white block">Simulate live events</span>
+                        <span className="text-[10px] text-slate-400 font-medium leading-snug block mt-1">
+                            <strong className="text-indigo-300">On:</strong> full activity ledger, visibility/deviation/idle/SOS phases, red path on map — for demos & reviews.
+                            <br />
+                            <strong className="text-emerald-400/90">Off:</strong> normal ride — car moves along the green route to drop-off with minimal logging.
+                        </span>
+                    </div>
+                    <div className={`w-11 h-6 rounded-full transition-colors relative shrink-0 mt-1 ${simulateLiveEvents ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+                        <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={simulateLiveEvents}
+                            onChange={() => setSimulateLiveEvents(!simulateLiveEvents)}
+                        />
+                        <div
+                            className={`absolute top-1 bottom-1 w-4 bg-white rounded-full transition-transform ${simulateLiveEvents ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                    </div>
+                </label>
 
                 <button
                     type="submit"
@@ -279,7 +278,7 @@ const RideControls = ({
                                     <motion.button
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
-                                        onClick={() => onBookRide(route, index)}
+                                        onClick={() => onBookRide(route, index, undefined, source, destination)}
                                         className="mt-5 w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white shadow-lg rounded-xl py-3 px-4 font-bold transition-all flex items-center justify-center gap-2 relative z-10"
                                     >
                                         <ShieldCheck className="w-5 h-5" /> Start Tracking {style.title.split(' ')[1]}

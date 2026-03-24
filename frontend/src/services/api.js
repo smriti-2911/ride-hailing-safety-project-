@@ -45,6 +45,13 @@ const endpoints = {
     checkDeviation: (rideId, currentLocation, context = {}) => api.post('/api/ride/check-deviation', { ride_id: rideId, current_location: currentLocation, context }),
     completeRide: (rideId) => api.post(`/api/ride/complete/${rideId}`),
     getAlerts: (rideId) => api.get(`/api/ride/alerts/${rideId}`),
+    listMyRides: () => api.get('/api/ride/my-rides'),
+    clearHistory: () => api.delete('/api/ride/clear-history'),
+    deleteRide: (rideId) => api.delete(`/api/ride/${rideId}`),
+  },
+  user: {
+    getProfile: () => api.get('/api/user/profile'),
+    updateProfile: (payload) => api.put('/api/user/profile', payload),
   },
   safety: {
     getSafetyScore: (source, destination, safetyMode = 'normal') => api.get('/api/safety/safety-score', { params: { source, destination, safety_mode: safetyMode } }),
@@ -58,5 +65,6 @@ export const authService = endpoints.auth;
 export const rideService = endpoints.rides;
 export const safetyService = endpoints.safety;
 export const historyService = endpoints.history;
+export const userService = endpoints.user;
 
 export default api;

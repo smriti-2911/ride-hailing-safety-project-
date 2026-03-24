@@ -17,9 +17,8 @@ backend/cache/
 logs/
 dump.rdb
 
-# DB (optional - uncomment if you want to exclude)
-# database.db
-# instance/
+# Local SQLite (generated per machine; do not commit)
+backend/instance/*.db
 
 # IDE & OS
 .DS_Store

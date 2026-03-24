@@ -1,144 +1,306 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  LineChart, Line, XAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  ReferenceArea,
 } from 'recharts';
 import { rideService } from '../services/api';
+
+function scoreZone(score) {
+  if (score >= 75) return { key: 'safe', label: 'Lower risk', fill: '#10b981' };
+  if (score >= 50) return { key: 'watch', label: 'Moderate', fill: '#f59e0b' };
+  return { key: 'elevated', label: 'Elevated', fill: '#f43f5e' };
+}
+
+const CustomTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  const z = scoreZone(p.score ?? 0);
+  return (
+    <div className="rounded-lg border border-white/10 bg-slate-950/95 px-3 py-2 shadow-xl backdrop-blur-sm">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{p.clock || p.time}</p>
+      <p className="text-lg font-black tabular-nums text-white">
+        {Number(p.score).toFixed(1)}
+        <span className="text-sm text-slate-500 font-bold"> /100</span>
+      </p>
+      <p className="text-xs font-semibold mt-0.5" style={{ color: z.fill }}>
+        {z.label}
+      </p>
+    </div>
+  );
+};
 
 const LiveRiskDashboard = ({ rideId, liveRisk }) => {
   const [riskData, setRiskData] = useState([]);
   const [timeline, setTimeline] = useState([]);
 
-  useEffect(() => {
-    if (!rideId || rideId === 'demo_123') return;
-    const fetchTimeline = async () => {
-      try {
-        const res = await rideService.getAlerts(rideId);
-        setTimeline(res.data.alerts);
-      } catch (e) {
-        console.error("Failed fetching timeline", e);
-      }
-    };
-    fetchTimeline();
-    const iv = setInterval(fetchTimeline, 3000);
-    return () => clearInterval(iv);
+  const fetchTimeline = useCallback(async () => {
+    if (!rideId) return;
+    try {
+      const res = await rideService.getAlerts(rideId);
+      setTimeline(res.data.alerts || []);
+    } catch (e) {
+      console.error('Failed fetching timeline', e);
+    }
   }, [rideId]);
 
   useEffect(() => {
+    if (!rideId) return;
+    fetchTimeline();
+    const iv = setInterval(fetchTimeline, 2000);
+    return () => clearInterval(iv);
+  }, [rideId, fetchTimeline]);
+
+  useEffect(() => {
+    if (!rideId || liveRisk?.pingSerial == null) return;
+    fetchTimeline();
+  }, [rideId, liveRisk?.pingSerial, fetchTimeline]);
+
+  useEffect(() => {
     if (!liveRisk) return;
-    
-    setRiskData(prev => {
+    setRiskData((prev) => {
+      const clock = new Date().toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      const score = liveRisk.score ?? 0;
+      const z = scoreZone(score);
       const newPoint = {
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        score: liveRisk.score || 0
+        time: `#${liveRisk.pingSerial ?? prev.length + 1}`,
+        clock,
+        score,
+        zone: z.key,
       };
       const updated = [...prev, newPoint];
-      // Keep last 20 pings for the scrolling window
-      return updated.length > 20 ? updated.slice(1) : updated;
+      return updated.length > 48 ? updated.slice(-48) : updated;
     });
-  }, [liveRisk?.score, liveRisk?.status, liveRisk?.reasons]);
+  }, [liveRisk?.pingSerial]);
 
   const currentScore = liveRisk?.score || 0;
   const currentRiskLevel = liveRisk?.status || 'Safe';
   const alerts = liveRisk?.reasons || [];
-  
-  // Determine UI Colors mapping 100 = SAFEST, 0 = DANGER
+
+  const phaseLabel =
+    typeof currentRiskLevel === 'string' && currentRiskLevel.length > 0
+      ? currentRiskLevel.replace(/_/g, ' ')
+      : '';
+
   const getStatusColor = () => {
-    if (currentScore >= 75) return 'text-emerald-500';
-    if (currentScore >= 50) return 'text-amber-500';
-    return 'text-rose-600 animate-pulse';
+    if (currentScore >= 75) return 'text-emerald-400';
+    if (currentScore >= 50) return 'text-amber-400';
+    return 'text-rose-400 animate-pulse';
   };
-  
-  const getBgColor = () => {
-    if (currentScore >= 75) return 'bg-emerald-50 shadow-[0_0_15px_rgba(16,185,129,0.1)]';
-    if (currentScore >= 50) return 'bg-amber-50 shadow-[0_0_15px_rgba(245,158,11,0.1)]';
-    return 'bg-rose-100 border-2 border-rose-500 shadow-[0_0_20px_rgba(225,29,72,0.3)]';
+
+  const getPanelAccent = () => {
+    if (currentScore >= 75) return 'border-emerald-500/25 shadow-[0_0_24px_rgba(16,185,129,0.08)]';
+    if (currentScore >= 50) return 'border-amber-500/25 shadow-[0_0_24px_rgba(245,158,11,0.08)]';
+    return 'border-rose-500/30 shadow-[0_0_28px_rgba(244,63,94,0.12)]';
   };
+
+  const chartHasData = riskData.length > 0;
+
+  const gradientStops = useMemo(
+    () => (
+      <defs>
+        <linearGradient id="riskAreaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#818cf8" stopOpacity={0.35} />
+          <stop offset="40%" stopColor="#6366f1" stopOpacity={0.12} />
+          <stop offset="100%" stopColor="#0f172a" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient id="riskStrokeGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#34d399" />
+          <stop offset="45%" stopColor="#fbbf24" />
+          <stop offset="100%" stopColor="#fb7185" />
+        </linearGradient>
+      </defs>
+    ),
+    []
+  );
 
   return (
-    <div className={`p-6 rounded-2xl shadow-xl transition-all duration-500 ${getBgColor()}`}>
-        <div className="flex justify-between items-center mb-6">
-            <div>
-                <h2 className="text-2xl font-bold text-gray-800">Live Safety Intelligence</h2>
-                <div className="flex items-center gap-2 mt-1">
-                    <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-                    <span className="text-sm font-medium text-gray-600">Simulating Live Trace</span>
-                </div>
-            </div>
-            
-            <div className="text-right">
-                <p className="text-sm text-gray-500 font-semibold uppercase tracking-wider">Current Risk Score</p>
-                <div className={`text-5xl font-black ${getStatusColor()}`}>
-                    {currentScore}<span className="text-2xl text-gray-400">/100</span>
-                </div>
-                <p className={`text-lg font-bold mt-1 ${getStatusColor()}`}>{currentRiskLevel}</p>
-            </div>
+    <div
+      className={`rounded-2xl border bg-slate-900/55 backdrop-blur-md p-5 transition-all duration-500 ${getPanelAccent()}`}
+    >
+      <div className="flex justify-between items-start gap-4 mb-5">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-bold text-white tracking-tight">Live Safety Intelligence</h2>
+          <div className="flex items-center gap-2 mt-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="text-xs font-medium text-slate-400 truncate">Live trace · ledger synced</span>
+          </div>
+          {phaseLabel && (
+            <p
+              className="text-[11px] font-semibold text-indigo-300/90 mt-2 uppercase tracking-wide truncate"
+              title={phaseLabel}
+            >
+              Phase · {phaseLabel}
+            </p>
+          )}
         </div>
 
-        {/* ALERTS SECTION */}
-        {alerts.length > 0 && (
-            <div className={`mb-6 p-4 rounded-xl shadow-inner ${currentScore < 50 ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-900 border border-amber-300'}`}>
-                <div className="flex items-center gap-3 mb-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                    <h3 className="font-bold text-lg">System Flag</h3>
+        <div className="text-right shrink-0">
+          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Risk score</p>
+          <div className={`text-4xl font-black tabular-nums leading-tight ${getStatusColor()}`}>
+            {typeof currentScore === 'number' ? currentScore.toFixed(1) : currentScore}
+            <span className="text-lg text-slate-500 font-bold">/100</span>
+          </div>
+          <p className={`text-sm font-bold mt-0.5 truncate max-w-[10rem] ${getStatusColor()}`}>{currentRiskLevel}</p>
+        </div>
+      </div>
+
+      {alerts.length > 0 && (
+        <div
+          className={`mb-5 p-3 rounded-xl border ${
+            currentScore < 50
+              ? 'bg-rose-950/50 border-rose-500/35 text-rose-100'
+              : 'bg-amber-950/40 border-amber-500/30 text-amber-100'
+          }`}
+        >
+          <h3 className="font-bold text-sm mb-1.5">Latest flag</h3>
+          <ul className="list-disc pl-5 text-sm font-medium opacity-95">
+            {alerts.map((alert, i) => (
+              <li key={i}>{alert}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="bg-gradient-to-b from-slate-950/80 to-slate-950/40 p-4 rounded-xl border border-white/5 overflow-hidden">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Risk timeline</h3>
+          <div className="flex flex-wrap gap-1.5 justify-end text-[9px] font-bold uppercase tracking-tight">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+              75+ safe
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-200 border border-amber-500/25">
+              50–75 watch
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-rose-500/12 text-rose-200 border border-rose-500/25">
+              &lt;50 elevated
+            </span>
+          </div>
+        </div>
+        <div className="h-56 w-full min-w-0">
+          {chartHasData ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={riskData} margin={{ top: 8, right: 8, left: -18, bottom: 4 }}>
+                {gradientStops}
+                <ReferenceArea y1={0} y2={50} fill="#f43f5e" fillOpacity={0.06} />
+                <ReferenceArea y1={50} y2={75} fill="#f59e0b" fillOpacity={0.05} />
+                <ReferenceArea y1={75} y2={100} fill="#10b981" fillOpacity={0.06} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.1)" />
+                <XAxis
+                  dataKey="clock"
+                  tick={{ fontSize: 9, fill: '#94a3b8' }}
+                  stroke="#334155"
+                  interval="preserveStartEnd"
+                  minTickGap={28}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  ticks={[0, 25, 50, 75, 100]}
+                  tick={{ fontSize: 10, fill: '#64748b' }}
+                  stroke="#334155"
+                  width={36}
+                />
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(99,102,241,0.35)', strokeWidth: 1 }} />
+                <ReferenceLine y={50} stroke="#fb7185" strokeDasharray="4 4" strokeOpacity={0.45} />
+                <ReferenceLine y={75} stroke="#fbbf24" strokeDasharray="4 4" strokeOpacity={0.45} />
+                <Area
+                  type="monotone"
+                  dataKey="score"
+                  stroke="none"
+                  fill="url(#riskAreaGrad)"
+                  fillOpacity={1}
+                  isAnimationActive
+                  animationDuration={400}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke="url(#riskStrokeGrad)"
+                  strokeWidth={2.5}
+                  dot={(props) => {
+                    const { cx, cy, payload } = props;
+                    if (cx == null || cy == null) return null;
+                    const col = scoreZone(payload?.score ?? 0).fill;
+                    return <circle cx={cx} cy={cy} r={4} fill={col} stroke="#0f172a" strokeWidth={1.5} />;
+                  }}
+                  activeDot={{ r: 7, strokeWidth: 0, fill: '#e2e8f0' }}
+                  isAnimationActive
+                  animationDuration={400}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm gap-2 px-4 text-center">
+              <div className="w-10 h-10 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-indigo-400/80 text-xs font-black">
+                ∿
+              </div>
+              <span className="font-medium">Chart fills as monitoring pings arrive…</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-950/40 p-4 rounded-xl border border-white/5 mt-4 max-h-72 overflow-y-auto custom-scrollbar">
+        <h3 className="text-[11px] font-bold text-slate-500 mb-3 uppercase tracking-wider flex items-center justify-between gap-2">
+          <span>Activity ledger</span>
+          <span className="text-[9px] bg-white/5 text-slate-400 px-2 py-0.5 rounded-full font-semibold">
+            {timeline.length} events
+          </span>
+        </h3>
+
+        <div className="space-y-3">
+          {timeline.length === 0 ? (
+            <div className="text-slate-500 text-sm italic py-6 text-center">Recording activity…</div>
+          ) : (
+            timeline.map((event) => (
+              <div
+                key={event.id}
+                className={`pl-3 border-l-2 py-1.5 ${
+                  event.severity === 'SOS'
+                    ? 'border-rose-500'
+                    : event.severity === 'Critical'
+                      ? 'border-amber-500'
+                      : event.severity === 'Warning'
+                        ? 'border-amber-400/90'
+                        : 'border-indigo-400/80'
+                }`}
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <span className="text-[10px] font-bold text-slate-500 tabular-nums">
+                    {event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : '—'}
+                  </span>
+                  <span
+                    className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 max-w-[9rem] truncate ${
+                      event.severity === 'SOS'
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : event.severity === 'Critical'
+                          ? 'bg-amber-500/15 text-amber-300'
+                          : event.severity === 'Warning'
+                            ? 'bg-yellow-500/15 text-yellow-200'
+                            : 'bg-indigo-500/15 text-indigo-200'
+                    }`}
+                    title={event.event_type}
+                  >
+                    {event.event_type}
+                  </span>
                 </div>
-                <ul className="list-disc pl-8 font-medium">
-                    {alerts.map((alert, i) => <li key={i}>{alert}</li>)}
-                </ul>
-            </div>
-        )}
-
-        {/* TIMELINE GRAPH */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider">Risk Timeline</h3>
-            <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={riskData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis dataKey="time" tick={{fontSize: 12}} stroke="#9CA3AF" />
-                        <Tooltip />
-                        <ReferenceLine y={50} stroke="#E11D48" strokeDasharray="3 3" />
-                        <ReferenceLine y={75} stroke="#F59E0B" strokeDasharray="3 3" />
-                        <Line type="stepAfter" dataKey="score" stroke="#000000" strokeWidth={3} dot={{r: 4, fill: '#000'}} activeDot={{r: 8}} />
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+                <p className="text-xs font-medium text-slate-300 mt-1 leading-snug">{event.message}</p>
+              </div>
+            ))
+          )}
         </div>
-
-        {/* EVENT VERIFICATION LOGGING */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 mt-6 max-h-64 overflow-y-auto">
-            <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center justify-between">
-                <div>Activity Ledger</div>
-                <div className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Secure Enterprise Audit</div>
-            </h3>
-            
-            <div className="space-y-4">
-                {timeline.length === 0 ? (
-                    <div className="text-gray-400 text-sm italic py-4 text-center">No anomalies recorded yet...</div>
-                ) : (
-                    timeline.map((event, idx) => (
-                        <div key={idx} className={`pl-4 border-l-2 py-1 ${
-                            event.severity === 'SOS' ? 'border-rose-500' :
-                            event.severity === 'Critical' ? 'border-amber-500' :
-                            event.severity === 'Warning' ? 'border-amber-400' : 'border-indigo-400'
-                        }`}>
-                            <div className="flex justify-between items-start">
-                                <span className="text-xs font-bold text-gray-500">
-                                    {new Date(event.timestamp).toLocaleTimeString()}
-                                </span>
-                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                                    event.severity === 'SOS' ? 'bg-rose-100 text-rose-600' :
-                                    event.severity === 'Critical' ? 'bg-amber-100 text-amber-600' :
-                                    event.severity === 'Warning' ? 'bg-yellow-100 text-yellow-600' : 'bg-indigo-100 text-indigo-600'
-                                }`}>
-                                    {event.event_type}
-                                </span>
-                            </div>
-                            <p className="text-sm font-medium text-gray-700 mt-1">{event.message}</p>
-                        </div>
-                    ))
-                )}
-            </div>
-        </div>
+      </div>
     </div>
   );
 };
