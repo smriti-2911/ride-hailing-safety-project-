@@ -2,6 +2,7 @@
 import logging
 import os
 import sys
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load backend/.env before any route imports (services/google_maps reads GOOGLE_MAPS_API_KEY).
@@ -61,6 +62,8 @@ if not _jwt:
     _jwt = 'default-secret-key'
 app.config['JWT_SECRET_KEY'] = _jwt
 app.config['SECRET_KEY'] = _jwt
+# Explicit expiry (Flask-JWT-Extended defaults can be short; avoids “random” session loss confusion)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 # Strip whitespace/newlines — unquoted .env values often break Twilio auth if a newline slips in
 def _env_strip(key):
     v = os.environ.get(key)

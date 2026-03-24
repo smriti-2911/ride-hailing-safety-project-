@@ -3,6 +3,13 @@ import axios from 'axios';
 const configuredBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
 const BASE_URL = configuredBase.replace(/\/+$/, '');
 
+if (import.meta.env.PROD && BASE_URL.includes('localhost')) {
+  // eslint-disable-next-line no-console
+  console.error(
+    '[NavSafe] VITE_API_BASE_URL was not set at build time. Set it in Vercel → Settings → Environment Variables and redeploy.'
+  );
+}
+
 // Render free tier can cold-start 30–60s+; 10s caused false "Login failed" after successful register.
 const api = axios.create({
   baseURL: BASE_URL,

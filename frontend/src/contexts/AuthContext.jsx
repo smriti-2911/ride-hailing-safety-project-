@@ -3,9 +3,10 @@ import { authService } from '../services/api';
 
 const AuthContext = createContext(null);
 
-/** Match backend: Postgres is case-sensitive; avoids login/register mismatch vs local SQLite. */
+/** Match backend `auth_routes._normalize_email` (NFKC + lower) so prod login/register agree. */
 function normalizeEmail(email) {
-  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (typeof email !== 'string') return '';
+  return email.normalize('NFKC').trim().toLowerCase();
 }
 
 export const AuthProvider = ({ children }) => {
@@ -33,11 +34,17 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
-      const msg =
+      const dbg = error.response?.data?.debug;
+      const base =
         error.response?.data?.error ||
         (error.code === 'ECONNABORTED'
           ? 'Server took too long (try again in a moment — API may be waking up)'
           : error.message);
+      const msg =
+        base +
+        (dbg
+          ? ` (${dbg === 'no_user' ? 'account not on this server — register again' : 'wrong password'})`
+          : '');
       return {
         success: false,
         error: msg || 'Login failed'
@@ -51,11 +58,13 @@ export const AuthProvider = ({ children }) => {
       await authService.register(payload);
       return await login(payload.email, userData.password);
     } catch (error) {
-      const msg =
+      const dbg = error.response?.data?.debug;
+      const base =
         error.response?.data?.error ||
         (error.code === 'ECONNABORTED'
           ? 'Server took too long (try again — API may be waking up)'
           : error.message);
+      const msg = base + (dbg ? ` (${dbg})` : '');
       return {
         success: false,
         error: msg || 'Registration failed'
