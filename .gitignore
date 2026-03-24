@@ -27,3 +27,5 @@ backend/instance/*.db
 
 # Large binaries (optional)
 *.zip
+# Presentations often exceed GitHub's 100MB per-file limit
+*.pptx
