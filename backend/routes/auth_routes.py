@@ -1,9 +1,21 @@
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from sqlalchemy import func
 from models.user import User
 from database import db
 
 auth_bp = Blueprint('auth', __name__)
+
+
+def _normalize_email(value):
+    """Production DBs (Postgres) match email case-sensitively; local SQLite often feels looser."""
+    if not isinstance(value, str):
+        return ''
+    return value.strip().lower()
+
+
+def _user_by_normalized_email(email_norm):
+    return User.query.filter(func.lower(User.email) == email_norm).first()
 
 
 def _coerce_age(value, default=25):
@@ -25,12 +37,16 @@ def register():
     for field in required_fields:
         if field not in data:
             return jsonify({'error': f'Missing required field: {field}'}), 400
-    
-    if User.query.filter_by(email=data['email']).first():
+
+    email_norm = _normalize_email(data.get('email'))
+    if not email_norm:
+        return jsonify({'error': 'Invalid email'}), 400
+
+    if _user_by_normalized_email(email_norm):
         return jsonify({'error': 'Email already registered'}), 400
     
     user = User(
-        email=data['email'],
+        email=email_norm,
         password=data['password'],
         name=data['name'],
         phone=data.get('phone'),
@@ -57,8 +73,12 @@ def login():
     
     if 'email' not in data or 'password' not in data:
         return jsonify({'error': 'Missing email or password'}), 400
-    
-    user = User.query.filter_by(email=data['email']).first()
+
+    email_norm = _normalize_email(data.get('email'))
+    if not email_norm:
+        return jsonify({'error': 'Invalid email'}), 400
+
+    user = _user_by_normalized_email(email_norm)
     if not user or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid email or password'}), 401
     
