@@ -37,7 +37,7 @@ From repository **root** (this repo includes a `Procfile`):
 - **Render / Railway:** set **Root Directory** to repo root (or set start command manually):
 
 ```bash
-cd backend && gunicorn --bind 0.0.0.0:$PORT app:app
+cd backend && gunicorn --bind 0.0.0.0:$PORT wsgi:app
 ```
 
 Ensure `PORT` is whatever the platform injects (Render/Railway set it automatically).
