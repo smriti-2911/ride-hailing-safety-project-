@@ -172,3 +172,4 @@ wrapt==1.17.2
 xyzservices==2025.1.0
 yarl==1.18.3
 polyline==1.4.0
+gunicorn==21.2.0
