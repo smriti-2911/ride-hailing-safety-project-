@@ -1,9 +1,19 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from models.user import User
 from database import db
 
 auth_bp = Blueprint('auth', __name__)
+
+
+def _coerce_age(value, default=25):
+    if value is None or value == '':
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -25,12 +35,17 @@ def register():
         name=data['name'],
         phone=data.get('phone'),
         emergency_contact=data.get('emergency_contact'),
-        age=data.get('age', 25),
+        age=_coerce_age(data.get('age'), 25),
         gender=data.get('gender', 'Unspecified')
     )
     
-    db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.add(user)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('register commit failed')
+        return jsonify({'error': 'Could not save user. Try again.'}), 500
     
     return jsonify({'message': 'User registered successfully'}), 201
 

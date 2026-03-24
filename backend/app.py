@@ -25,7 +25,16 @@ CORS(app)
 
 # Configure Database & JWT
 basedir = _basedir
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(basedir, 'instance', 'database.db')
+_db_url = os.environ.get('DATABASE_URL')
+if _db_url:
+    # Render/Heroku sometimes use postgres://; SQLAlchemy expects postgresql://
+    if _db_url.startswith('postgres://'):
+        _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+else:
+    _instance = os.path.join(basedir, 'instance')
+    os.makedirs(_instance, exist_ok=True)
+    _db_url = 'sqlite:///' + os.path.join(_instance, 'database.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-secret-key')
 # Strip whitespace/newlines — unquoted .env values often break Twilio auth if a newline slips in
